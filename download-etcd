@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+ROOTDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+cd "${ROOTDIR}"
+
+if [ -f "vars" ]
+then
+  source vars
+fi
+
+VERSION="3.1.5"
+MIRROR="${ETCD_MIRROR:-https://storage.googleapis.com/etcd}"
+
+cd downloads
+
+if [ ! -f "etcd-v${VERSION}-linux-amd64.tar.gz" ]
+then
+  wget "${MIRROR}/v${VERSION}/etcd-v${VERSION}-linux-amd64.tar.gz"
+fi
+
+if [ ! -f "etcd-v${VERSION}-linux-amd64.tar.gz.asc" ]
+then
+  wget "${MIRROR}/v${VERSION}/etcd-v${VERSION}-linux-amd64.tar.gz.asc"
+fi
+
+if [ ! -f "app-signing-pubkey.gpg" ]
+then
+  wget "https://coreos.com/dist/pubkeys/app-signing-pubkey.gpg"
+fi
+
+rm -rf .gnupg
+mkdir .gnupg
+gpg2 --homedir .gnupg --import app-signing-pubkey.gpg
+gpg2 --homedir .gnupg --verify "etcd-v${VERSION}-linux-amd64.tar.gz.asc" "etcd-v${VERSION}-linux-amd64.tar.gz"
+
+cd ..
+
+mkdir -p root/root/etcd
+tar -xvf "downloads/etcd-v${VERSION}-linux-amd64.tar.gz" -C root/root/etcd --strip-components=1

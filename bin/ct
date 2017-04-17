@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+BINDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+ROOTDIR="${ROOTDIR:-/root}"
+
+start() {
+  local node="$1"
+  local pod="$2"
+  local hostname="$3"
+  local name="$4"
+  local image="$5"
+
+  local NODESDIR="${ROOTDIR}/nodes/${node}"
+  local PODDIR="${NODESDIR}/pods/${pod}"
+
+  "${BINDIR}/daemonize" -e "${PODDIR}/${name}.err" -o "${PODDIR}/${name}.out" "${BINDIR}/unspawn" -n "${hostname}" --pidfile="/run/containers/${node}/${pod}/${name}.pid" --net="${hostname}" --no-pid --no-cgroup -- "${BINDIR}/init" "${node}" "${pod}" "${name}" "${image}"
+}
+
+stop() {
+  local node="$1"
+  local pod="$2"
+  local name="$3"
+
+  "${BINDIR}/uncheck" -kill --pidfile="/run/containers/${node}/${pod}/${name}.pid"
+}
+
+check() {
+  local node="$1"
+  local pod="$2"
+  local name="$3"
+
+  "${BINDIR}/uncheck" --pidfile="/run/containers/${node}/${pod}/${name}.pid"
+}
+
+
+case "$1" in
+start|stop|check)
+  "$@"
+  ;;
+*)
+  exit 1
+  ;;
+esac
+

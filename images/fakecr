@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+exec fakecr -logtostderr --v=0 --node="${NODE}" --rootdir="${ROOTDIR}" --bindir="${BINDIR}" --listen="/run/pods/${NODE}/${POD}/fakecr.sock"

@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+export BINDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+export ROOTDIR="${ROOTDIR:-/root}"
+
+export NODE="$1"
+export POD="$2"
+export CONTAINER="$3"
+export IMAGE="$4"
+
+NODESDIR="${ROOTDIR}/nodes/${NODE}"
+PODDIR="${NODESDIR}/pods/${POD}"
+
+mount -o rbind "${NODESDIR}/kubelet" /var/lib/kubelet
+mount -o rbind "${NODESDIR}/log" /var/log
+
+if [[ -e "${PODDIR}/${CONTAINER}.sh" ]]
+then
+  source "${PODDIR}/${CONTAINER}.sh"
+fi
+
+cd "${PODDIR}"
+exec "${ROOTDIR}/images/${IMAGE}"

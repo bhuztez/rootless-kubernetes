@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+BINDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+ROOTDIR="${ROOTDIR:-/root}"
+
+daemon() {
+  local name="$1"
+  shift
+  start-stop-daemon -S -n "${name}" -x "${BINDIR}/daemonize" -- -e "${ROOTDIR}/log/${name}.err" -o "${ROOTDIR}/log/${name}.out" "$@"
+}
+
+kube-daemon() {
+  local name="$1"
+  shift
+  daemon "${name}" /sbin/ip netns exec dnsmasq "kube-${name}" --kubeconfig "${HOME}/.kube/config" --v=0 --logtostderr "$@"
+}
+
+wait_port() {
+  # taken from http://tldp.org/HOWTO/Bash-Prog-Intro-HOWTO-7.html
+  local COUNTER=0
+  until ncat --send-only "$@" < /dev/null
+  do
+    sleep 1
+    let COUNTER+=1
+    if [ "$COUNTER" -ge 5 ]
+    then
+       return 1
+    fi
+  done
+}
+
+dnsmasq() {
+  if [ ! -e "/var/run/netns/dnsmasq" ]
+  then
+    ip netns add dnsmasq
+  fi
+  ip netns exec dnsmasq ip link set lo up
+
+  set +e
+  ip netns exec dnsmasq ip link show br0
+  local result="$?"
+  set -e
+
+  if [[ "${result}" != 0 ]]
+  then
+    ip link add br0 type veth peer name br1
+    ip link add link br1 name eth0 type macvlan mode bridge
+
+    ip link set br0 netns dnsmasq
+    ip link set br1 netns dnsmasq
+    ip netns exec dnsmasq ip address add 10.0.0.1/24 dev br0
+    ip netns exec dnsmasq ip link set br0 up
+    ip netns exec dnsmasq ip link set br1 up
+
+    ip link set lo up
+    ip link set eth0 up
+  fi
+
+  daemon dnsmasq /sbin/ip netns exec dnsmasq dnsmasq -C "${BINDIR}/dnsmasq.conf"
+  busybox udhcpc -i eth0 -f -n -q -s "${BINDIR}/dhcp"
+}
+
+etcd() {
+  daemon etcd /sbin/ip netns exec dnsmasq etcd --data-dir "${ROOTDIR}/etcd-data" --log-output stderr --listen-peer-urls 'http://10.0.0.1:2380'
+  wait_port 10.0.0.1 2380
+}
+
+apiserver() {
+  daemon apiserver /sbin/ip netns exec dnsmasq kube-apiserver --bind-address=10.0.0.1 --insecure-bind-address=10.0.0.1 --secure-port=0 --kubelet-https=false --v=0 --logtostderr=true --etcd-servers=http://127.0.0.1:2379 --service-cluster-ip-range=10.0.0.0/16
+  wait_port 10.0.0.1 8080
+}
+
+scheduler() {
+  kube-daemon scheduler
+  wait_port 10.0.0.1 10251
+}
+
+controller-manager() {
+  kube-daemon controller-manager --service-cluster-ip-range='10.0.1.0/24'
+  wait_port 10.0.0.1 10252
+}
+
+case "$1" in
+start)
+  shift
+  "$@"
+  ;;
+stop)
+  start-stop-daemon -K -n "$2"
+  ;;
+*)
+  exit 1
+  ;;
+esac

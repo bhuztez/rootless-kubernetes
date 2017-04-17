@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+
+# taken from
+# https://github.com/lxc/lxc/blob/7276799bd7de7b147d4f3fed62ee30917dc22c3a/templates/lxc-alpine.in
+
+# LICENSE of origin lxc-alpine.in
+
+# Authors:
+# Jakub Jirutka <jakub@jirutka.cz>
+
+# This library is free software; you can redistribute it and/or
+# modify it under the terms of the GNU Lesser General Public
+# License as published by the Free Software Foundation; either
+# version 2.1 of the License, or (at your option) any later version.
+#
+# This library is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+# Lesser General Public License for more details.
+#
+# You should have received a copy of the GNU Lesser General Public
+# License along with this library; if not, write to the Free Software
+# Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
+
+
+set -e
+set -o pipefail
+
+if [[ -z "${USERNS_NAME}" ]]
+then
+
+ROOTDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+cd "${ROOTDIR}"
+
+./bin/unspawn -n kube -d localdomain --user -- "${BASH_SOURCE[0]}"
+
+else
+
+if [ -f "vars" ]
+then
+  source vars
+fi
+
+mkdir -p downloads
+cd downloads
+
+MIRROR="${ALPINE_MIRROR:-http://dl-cdn.alpinelinux.org/alpine}"
+
+PKG="apk-tools-static"
+VERSION=$(wget -q -O - "${MIRROR}/latest-stable/main/x86_64/APKINDEX.tar.gz" | tar -xzO APKINDEX | sed -n "/P:${PKG}/,/^$/ s/V:\(.*\)$/\1/p")
+
+wget -O - "${MIRROR}/latest-stable/main/x86_64/${PKG}-${VERSION}.apk" | tar -xz sbin/
+
+KEY=$(echo sbin/apk.static.*.pub | sed 's/.*\.SIGN\.RSA\.//')
+
+if [ ! -f "keys/${KEY}" ]
+then
+  wget -nH -np -r 'https://alpinelinux.org/keys/'
+fi
+
+openssl dgst -sha1 -verify "keys/${KEY}" -signature "sbin/apk.static.SIGN.RSA.${KEY}" "sbin/apk.static"
+
+cd ..
+
+set +e
+# busybox in alpine linux does not have start-stop-daemon, thus we
+# have openrc here
+
+# alpine linux patched golang source code, so that it generates PIE
+# binary on all platforms unfortunately, as of 1.7, golang does not
+# support PIE on Linux x86_64. External linker is required to generate
+# PIE binary, so we need libc-dev see
+# https://github.com/etsy/hound/pull/237
+
+# user namespace utilities is compiled outside chroot, which is linked
+# against glibc, thus we should install libc6-compat
+
+downloads/sbin/apk.static -X "${MIRROR}/latest-stable/main" -X "${MIRROR}/latest-stable/community" -U --keys-dir "$(pwd)/downloads/keys" --root root --initdb add alpine-base bash libc-dev libc6-compat iproute2 go openrc dnsmasq nmap-ncat
+set -e
+
+mkdir -p root/rootfs
+mkdir -p root/root/bin
+mkdir -p root/root/images
+mkdir -p root/root/log
+mkdir -p root/root/manifests
+mkdir -p bind
+mkdir -p root/var/lib/kubelet
+
+cd root
+touch etc/hosts
+touch etc/resolv.conf
+ln -s lib lib64
+
+fi

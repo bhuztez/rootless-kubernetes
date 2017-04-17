@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+rm -rf root
+make
+./make-chroot
+./download-etcd
+./download-kubernetes
+./enter-chroot go install -x fakecr
+./enter-chroot /root/bin/kubeconfig

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+
+
+set -e
+set -o pipefail
+
+BINDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+ROOTDIR="${ROOTDIR:-/root}"
+
+"${BINDIR}/clean"
+"${BINDIR}/service" start dnsmasq
+"${BINDIR}/service" start etcd
+"${BINDIR}/service" start apiserver
+
+for name in "$@"
+do
+  "${BINDIR}/service" start "${name}"
+done

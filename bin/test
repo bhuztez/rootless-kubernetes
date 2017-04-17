@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+BINDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+export ROOTDIR=/root
+
+wait() {
+  # taken from http://tldp.org/HOWTO/Bash-Prog-Intro-HOWTO-7.html
+  local COUNTER=0
+  until "$@"
+  do
+    sleep 2
+    let COUNTER+=1
+    if [ "$COUNTER" -ge 10 ]
+    then
+       return 1
+    fi
+  done
+}
+
+start_nodes() {
+  "${BINDIR}/newnode" "$@"
+  for node in "$@"
+  do
+    wait kubectl get node "${node}"
+  done
+}
+
+
+pod_running() {
+  if [ x$(kubectl get pod "$1" -o jsonpath='{ .status.phase }') != xRunning ]
+  then
+    return 1
+  fi
+}
+
+ready() {
+  if [ x$(kubectl get "$1" "$2" -o jsonpath='{ .status.readyReplicas }') != x$(kubectl get "$1" "$2" -o jsonpath='{ .status.replicas }') ]
+  then
+    return 1
+  fi
+}
+
+check_pod() {
+  local text="$1"
+  shift
+
+  for ip in "$@"
+  do
+
+  if [ x$(ncat --recv-only "${ip}" 80) != x"${text}" ]
+  then
+    return 1
+  fi
+
+  done
+}
+
+standalone() {
+  "${BINDIR}/start-standalone"
+  cp manifests/pod.yaml nodes/node1/kubelet/manifests
+  wait "${BINDIR}/showip" hello-node1
+  check_pod hello $("${BINDIR}/showip" hello-node1)
+}
+
+binding() {
+  "${BINDIR}/start-single-master"
+  kubectl create -f manifests/pod.yaml
+  kubectl create -f manifests/bind.yaml
+  start_nodes node1
+  wait pod_running hello
+  check_pod hello $(kubectl get pod hello -o jsonpath='{ .status.podIP }')
+}
+
+scheduler() {
+  "${BINDIR}/start-single-master" scheduler
+  kubectl create -f manifests/pod.yaml
+  start_nodes node1
+  wait pod_running hello
+  check_pod hello $(kubectl get pod hello -o jsonpath='{ .status.podIP }')
+}
+
+replicaset() {
+  "${BINDIR}/start-single-master" scheduler scheduler controller-manager
+  kubectl create --filename manifests/rs.yaml
+  start_nodes node1 node2 node3
+  wait ready rs hello
+  check_pod hello $(kubectl get pods -lapp=hello -o jsonpath='{ .status.podIP }')
+}
+
+deployment() {
+  "${BINDIR}/start-single-master" scheduler scheduler controller-manager
+  kubectl create --filename manifests/deployment.yaml
+  start_nodes node1 node2 node3
+  wait ready deployment hello
+  check_pod hello $(kubectl get pods -lapp=hello -o jsonpath='{ .items[*].status.podIP }')
+  kubectl set image deployment/hello hello=hello-world
+  kubectl rollout status deployment/hello
+  check_pod 'hello world' $(kubectl get pods -lapp=hello -o jsonpath='{ .items[*].status.podIP }')
+}
+
+cd "${ROOTDIR}"
+"${BINDIR}/clean"
+"$@"

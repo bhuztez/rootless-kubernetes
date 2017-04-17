@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Binding
+metadata:
+  name: hello
+target:
+  apiVersion: v1
+  kind: Node
+  name: node1

@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+export BINDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+export ROOTDIR="${ROOTDIR:-/root}"
+
+for NODE in "$@"
+do
+
+NODESDIR="${ROOTDIR}/nodes/${NODE}"
+mkdir -p "${NODESDIR}"
+mkdir -p "${NODESDIR}/log"
+mkdir -p "${NODESDIR}/kubelet"
+
+"${BINDIR}/pod" create "${NODE}" kubelet "${NODE}"
+"${BINDIR}/ct" start "${NODE}" kubelet "${NODE}" fakecr fakecr
+
+until [ ! -f "/run/pods/${NODE}/kubelet/fakecr.sock" ]
+do
+  sleep 1
+done
+
+"${BINDIR}/ct" start "${NODE}" kubelet "${NODE}" kubelet kubelet
+
+done

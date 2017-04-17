@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+if [[ -z "${USERNS_NAME}" ]]
+then
+
+ROOTDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+cd "${ROOTDIR}"
+
+"./bin/unspawn" -n kube -d localdomain --user --net -- "${BASH_SOURCE[0]}" "$@"
+
+else
+
+reset_env() {
+  export -n $(export -p | grep -Po '(?<=^declare -x )[^=]+')
+  export "$@"
+}
+
+ROOT="$(pwd)/bind"
+
+bind_dev() {
+  local name="$1"
+  if [ -e "/dev/${name}" ]
+  then
+    touch "${ROOT}/dev/${name}"
+    mount -B "/dev/${name}" "${ROOT}/dev/${name}"
+  fi
+}
+
+mount_cgroup() {
+  mkdir "${ROOT}/sys/fs/cgroup/$1"
+  mount -t cgroup -o "$1" cgroup "${ROOT}/sys/fs/cgroup/$1"
+}
+
+mount --rbind "$(pwd)/root" "${ROOT}"
+
+# taken from http://www.tldp.org/LDP/lfs/LFS-BOOK-6.1.1-HTML/chapter06/devices.html
+mount -t tmpfs tmpfs "${ROOT}/dev"
+mkdir "${ROOT}/dev/shm"
+mkdir "${ROOT}/dev/mqueue"
+mount -t mqueue mqueue "${ROOT}/dev/mqueue"
+mkdir "${ROOT}/dev/pts"
+mount -t devpts -o newinstance,gid=0,mode=600 devpts "${ROOT}/dev/pts"
+touch "${ROOT}"/dev/ptmx
+mount -B "${ROOT}/dev/pts/ptmx" "${ROOT}/dev/ptmx"
+
+bind_dev console
+bind_dev full
+bind_dev null
+bind_dev zero
+bind_dev tty
+bind_dev random
+bind_dev urandom
+
+ln -s /proc/self/fd "${ROOT}/dev/fd"
+ln -s /proc/self/fd/0 "${ROOT}/dev/stdin"
+ln -s /proc/self/fd/1 "${ROOT}/dev/stdout"
+ln -s /proc/self/fd/2 "${ROOT}/dev/stderr"
+ln -s /proc/kcore "${ROOT}/dev/core"
+
+touch "${ROOT}/dev/termination-log"
+
+mount -t proc proc "${ROOT}/proc"
+mount -t tmpfs tmpfs "${ROOT}/run"
+mount -t tmpfs tmpfs "${ROOT}/tmp"
+mount -t sysfs sysfs "${ROOT}/sys"
+mount -t tmpfs tmpfs "${ROOT}/sys/fs/cgroup"
+
+mount_cgroup pids
+mount_cgroup devices
+mount_cgroup cpu,cpuacct
+mount_cgroup net_cls,net_prio
+mount_cgroup cpuset
+mount_cgroup blkio
+mount_cgroup memory
+mount_cgroup freezer
+mount_cgroup perf_event
+mount_cgroup hugetlb
+
+
+mount --rbind "${ROOT}" "${ROOT}/rootfs"
+mount --rbind "${ROOT}/run" "${ROOT}/var/run"
+mount --rbind "$(pwd)/fakecr" "${ROOT}/root/gopath/src/fakecr"
+mount --rbind "$(pwd)/bin" "${ROOT}/root/bin"
+mount --rbind "$(pwd)/images" "${ROOT}/root/images"
+mount --rbind "$(pwd)/manifests" "${ROOT}/root/manifests"
+
+
+reset_env                              \
+  USERNS_NAME="${USERNS_NAME}"         \
+  USERNS_DOMAIN="${USERNS_DOMAIN}"     \
+  XDG_RUNTIME_DIR=/run                 \
+  LANG="en_US.UTF8"                    \
+  PATH="/bin:/sbin:/usr/bin:/usr/sbin:/root/kubernetes/server/bin:/root/kubernetes/client/bin:/root/gopath/bin:/root/etcd" \
+  HOME="/root"                         \
+  SHELL="${SHELL}"                     \
+  TERM="${TERM}"                       \
+  GOPATH="/root/gopath:/root/vendor"   \
+  ETCDCTL_API=3                        \
+
+
+exec chroot "$(pwd)/bind" "$@"
+
+fi

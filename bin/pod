@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+BINDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+ROOTDIR="${ROOTDIR:-/root}"
+
+create() {
+  local node="$1"
+  local pod="$2"
+  local hostname="$3"
+
+  ip netns add "${hostname}"
+
+  (
+    flock 9
+    ip netns exec dnsmasq ip link add link br1 name eth0 type macvlan mode bridge
+    ip netns exec dnsmasq ip link set eth0 netns "${hostname}"
+  ) 9>>/run/lock
+
+  ip netns exec "${hostname}" ip link set lo up
+  ip netns exec "${hostname}" ip link set eth0 up
+  ip netns exec "${hostname}" busybox udhcpc -i eth0 -f -n -q -s "${BINDIR}/dhcp"
+
+  local NODESDIR="${ROOTDIR}/nodes/${node}"
+  mkdir -p "${NODESDIR}/pods/${pod}"
+  mkdir -p "/run/pods/${node}/${pod}"
+  mkdir -p "/run/containers/${node}/${pod}"
+}
+
+remove() {
+  local node="$1"
+  local pod="$2"
+  local hostname="$3"
+
+  ip netns delete "${hostname}"
+
+  local NODESDIR="${ROOTDIR}/nodes/${node}"
+  rm -rf "${NODESDIR}/pods/${pod}"
+  rm -rf "/run/pods/${node}/${pod}"
+  rm -rf "/run/containers/${node}/${pod}"
+}
+
+
+case "$1" in
+create|remove)
+  "$@"
+  ;;
+*)
+  exit 1
+  ;;
+esac
+

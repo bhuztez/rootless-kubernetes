@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+BINDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+ROOTDIR="${ROOTDIR:-/root}"
+
+rm -rf etcd-data/*
+rm -rf nodes/*

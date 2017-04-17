@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+
+# as of Kubernetes 1.6.1, kubelet won't work if you don't set these
+# kernel parameters to its desired value.  have --containerized=true
+# won't make a difference here.
+# https://github.com/kubernetes/kubernetes/blob/master/pkg/kubelet/cm/container_manager_linux.go#L311-L314
+
+set -e
+set -o pipefail
+
+ROOTDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+cd "${ROOTDIR}"
+
+configure() {
+  if [ ! -e "origin.conf" ]
+  then
+    sysctl vm.overcommit_memory vm.panic_on_oom kernel.panic kernel.panic_on_oops > origin.conf
+  fi
+  sysctl -p kubelet.conf
+}
+
+restore() {
+  sysctl -p origin.conf
+}
+
+case "$1" in
+configure|restore)
+  "$@"
+  ;;
+*)
+  exit 1
+  ;;
+esac

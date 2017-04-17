@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+ROOTDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+cd "${ROOTDIR}"
+
+TESTS="standalone binding scheduler replicaset deployment"
+
+for TEST in ${TESTS}
+do
+  ./enter-chroot /root/bin/test "${TEST}"
+done

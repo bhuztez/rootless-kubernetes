@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+deconfig() {
+  # taken from https://superuser.com/a/153613
+  ip addr flush dev "${interface}"
+
+  ip link set "${interface}" down
+  ip link set "${interface}" up
+}
+
+bound() {
+  ip address add "${ip}/${mask}" dev "${interface}"
+}
+
+renew() {
+  echo renew
+  exit 1
+}
+
+nak() {
+  echo nak
+  exit 1
+}
+
+case "$1" in
+deconfig|bound|renew|nak)
+  "$@"
+  ;;
+*)
+  exit 1
+  ;;
+esac

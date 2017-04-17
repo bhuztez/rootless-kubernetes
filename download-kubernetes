@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+ROOTDIR=$(dirname $(readlink -f "${BASH_SOURCE[0]}"))
+cd "${ROOTDIR}"
+
+if [ -f "vars" ]
+then
+  source vars
+fi
+
+VERSION="1.6.1"
+MIRROR="${KUBERNETES_MIRROR:-https://dl.k8s.io}"
+SERVER="${MIRROR}/v${VERSION}/kubernetes-server-linux-amd64.tar.gz"
+CLIENT="${MIRROR}/v${VERSION}/kubernetes-client-linux-amd64.tar.gz"
+
+mkdir -p "downloads/kubernetes-v${VERSION}"
+cd "downloads/kubernetes-v${VERSION}"
+
+if [ ! -f "kubernetes-server-linux-amd64.tar.gz" ]
+then
+  wget "${SERVER}"
+fi
+
+if [ ! -f "kubernetes-client-linux-amd64.tar.gz" ]
+then
+  wget "${CLIENT}"
+fi
+
+sha256sum -c << EOF
+3e5c7103f44f20a95db29243a43f04aca731c8a4d411c80592ea49f7550d875c kubernetes-server-linux-amd64.tar.gz
+21e85cd3388b131fd1b63b06ea7ace8eef9555b7c558900b0cf1f9a3f2733e9a kubernetes-client-linux-amd64.tar.gz
+EOF
+
+cd ../..
+
+tar -xvf "downloads/kubernetes-v${VERSION}/kubernetes-server-linux-amd64.tar.gz" -C root/root
+tar -xvf "downloads/kubernetes-v${VERSION}/kubernetes-client-linux-amd64.tar.gz" -C root/root
+
+cd root/root/kubernetes
+mkdir src
+tar -xvf kubernetes-src.tar.gz -C src --no-same-owner
+cd ..
+
+mkdir -p gopath/src/fakecr
+mkdir -p gopath/src/k8s.io/kubernetes
+
+mkdir -p vendor
+cd vendor
+ln -s ../kubernetes/src/vendor src
+
+cd ../gopath/src/k8s.io/kubernetes
+ln -s ../../../../kubernetes/src/pkg
+ln -s ../../../../kubernetes/src/plugin
+ln -s ../../../../kubernetes/src/third_party

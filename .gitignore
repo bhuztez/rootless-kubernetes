@@ -1,0 +1,10 @@
+*~
+root/
+bind/
+downloads/
+bin/daemonize
+bin/unspawn
+bin/uncheck
+bin/unenter
+vars
+origin.conf

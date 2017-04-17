@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+set -e
+set -o pipefail
+
+# copied from https://stackoverflow.com/a/28616219
+IP=$(ip -4 addr show eth0 | grep inet | awk '{print $2}' | cut -d/ -f1)
+
+exec kubelet --pod-manifest-path=/var/lib/kubelet/manifests --network-plugin=cni --node-ip="${IP}" --v=0 --enforce-node-allocatable="" --cgroups-per-qos=false --protect-kernel-defaults=true --containerized=true --hairpin-mode=none --logtostderr=true --enable-cri=true --container-runtime=remote --container-runtime-endpoint="/run/pods/${NODE}/${POD}/fakecr.sock"
